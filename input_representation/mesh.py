@@ -1,5 +1,7 @@
+import pytorch3d.structures
 import trimesh
-from ..utils import checks
+from pytorch3d.io import load_objs_as_meshes
+from utils import checks
 
 class TriangleMesh:
     """
@@ -12,12 +14,15 @@ class TriangleMesh:
     """
 
     def __init__(self, mesh_path="",
-                 mesh: trimesh.Trimesh = None):
+                 mesh: trimesh.Trimesh = None,
+                 pytorch_mesh : pytorch3d.structures.Meshes = None):
         if mesh_path:
             checks.check_file_exists(mesh_path)
             self.mesh_path = mesh_path
         if mesh is not None:
             self.mesh = mesh
+        if pytorch_mesh is not None:
+            self.pytorch_mesh = pytorch_mesh
 
     @staticmethod
     def load(mesh_path):
@@ -37,3 +42,21 @@ class TriangleMesh:
         Loads from trimesh object from path attribute
         """
         self.mesh = trimesh.load(self.mesh_path,process=False)
+
+    @staticmethod
+    def load_pytorch(mesh_path):
+        """
+
+        :param mesh_path:  Path to mesh file.
+        :return: TriangleMesh
+        """
+
+        checks.check_file_exists(mesh_path)
+        pytorch_mesh = load_objs_as_meshes([mesh_path])
+        return TriangleMesh(mesh_path=mesh_path,pytorch_mesh=pytorch_mesh)
+
+    def load_pytorch_mesh_from_file(self):
+        """
+        Loads from pytorch mesh object from path attribute
+        """
+        self.pytorch_mesh = load_objs_as_meshes([self.mesh_path]).cuda()
