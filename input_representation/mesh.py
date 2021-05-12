@@ -1,7 +1,9 @@
-import pytorch3d.structures
+import torch
+from pytorch3d.structures import Meshes
 import trimesh
 from pytorch3d.io import load_objs_as_meshes
 from utils import checks
+import numpy as np
 
 class TriangleMesh:
     """
@@ -15,7 +17,7 @@ class TriangleMesh:
 
     def __init__(self, mesh_path="",
                  mesh: trimesh.Trimesh = None,
-                 pytorch_mesh : pytorch3d.structures.Meshes = None):
+                 pytorch_mesh : Meshes = None):
         if mesh_path:
             checks.check_file_exists(mesh_path)
             self.mesh_path = mesh_path
@@ -60,3 +62,24 @@ class TriangleMesh:
         Loads from pytorch mesh object from path attribute
         """
         self.pytorch_mesh = load_objs_as_meshes([self.mesh_path]).cuda()
+
+    def get_bb_diagonal_length(self):
+        verts = self.mesh.vertices
+        bb_min = np.min(verts, 0)
+        bb_max = np.max(verts, 0)
+        diag = np.sqrt(np.sum((bb_max-bb_min)**2))
+
+        return diag
+
+    def unit_normalize(self):
+        verts = self.mesh.vertices
+        diagonal_length = self.get_bb_diagonal_length()
+        scaled_verts = (1.0/diagonal_length)*verts
+        scaled_trimesh = trimesh.Trimesh(vertices=scaled_verts,faces=self.mesh.faces,process=False)
+
+        pytorch_scaled_verts = torch.from_numpy(np.array(scaled_verts)).float()
+        pytorch_faces = torch.from_numpy(np.array(self.mesh.faces)).int()
+
+        scaled_pytorch_mesh = Meshes(verts=[pytorch_scaled_verts],faces=[pytorch_faces],
+                                     textures=self.pytorch_mesh.textures).cuda()
+        return TriangleMesh(mesh=scaled_trimesh,pytorch_mesh=scaled_pytorch_mesh)

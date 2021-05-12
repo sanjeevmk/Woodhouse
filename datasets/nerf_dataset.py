@@ -1,4 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 import os
 from typing import List, Optional, Tuple
 

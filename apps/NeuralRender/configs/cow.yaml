@@ -1,0 +1,26 @@
+seed: 3
+resume: False
+stats_print_interval: 10
+validation_epoch_interval: 1
+checkpoint_epoch_interval: 1
+checkpoint_path: 'checkpoints/cow_pt3d.pth'
+data:
+  dataset_name: 'cow'
+  image_size: [128, 128] # [height, width]
+  views_folder : '/home/samk/PhD/Datasets/Cow_Views_Random'
+  obj_path: '/home/samk/Code/neural_graphics/basic_tests/data/cow_mesh/cow.obj'
+  texture_path: '/home/samk/Code/neural_graphics/basic_tests/data/cow_mesh/cow_texture.png'
+training:
+  batch_size: 1
+  texture_feature_dim: 32
+optimizer:
+  max_epochs: 20000
+  lr: 0.001
+  lr_scheduler_step_size: 5000
+  lr_scheduler_gamma: 0.1
+visualization:
+  history_size: 10
+  visdom: True
+  visdom_server: 'localhost'
+  visdom_port: 8097
+  visdom_env: 'neural_render'

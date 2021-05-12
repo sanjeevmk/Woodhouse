@@ -1,4 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 import torch
 from pytorch3d.renderer import EmissionAbsorptionRaymarcher
 from pytorch3d.renderer.implicit.raymarching import (

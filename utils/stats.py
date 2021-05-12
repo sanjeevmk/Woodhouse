@@ -1,4 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 import time
 import warnings
 from itertools import cycle
@@ -228,7 +227,7 @@ class Stats(object):
             if stats[stat_set][stat].count == 0:
                 continue
             stat_str += " {0:.12}: {1:1.3f} |".format(stat, stats[stat_set][stat].avg)
-
+        print(stat_str)
         head_str = f"[{stat_set}] | epoch {epoch} | it {it}"
         if max_it:
             head_str += f"/ {max_it}"
