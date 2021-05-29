@@ -4,15 +4,21 @@ import hydra
 from omegaconf import DictConfig
 import os
 from datasets.single_mesh_multi_views import CowMultiViews
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader,Subset
 from renderer.shaders.graph_conv_shaders import MeshRenderer as GraphRenderer
 from pytorch3d.structures import Meshes
 from visdom import Visdom
 from utils.stats import Stats
 import collections
 import pickle
-from utils.visualize_outputs import visualize_image_outputs
-from util_networks.image_encoder import ImageEncoder
+from utils.visualize_outputs import visualize_image_outputs,visualize_image_list_vertically
+from util_networks.image_translator import ImageTranslator
+from renderer.cameras import Camera
+from renderer.rasterizer import Rasterizer
+from pytorch3d.ops import interpolate_face_attributes
+import math
+import random
+
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
@@ -33,32 +39,40 @@ def main(cfg: DictConfig):
                                                                                          validation_fraction=0.2)
 
     del dataset
+    train_dataset.unit_normalize()
+    validation_dataset.unit_normalize()
+    test_dataset.unit_normalize()
 
-    mesh_verts = train_dataset.get_verts()
-    mesh_edges = train_dataset.get_edges()
-    mesh_vert_normals = train_dataset.get_vert_normals()
-    mesh_texture = train_dataset.get_texture()
 
-    feature_size = train_dataset.param_vectors.shape[1]
+    mesh_verts = test_dataset.get_verts()
+    mesh_edges = test_dataset.get_edges()
+    mesh_vert_normals = test_dataset.get_vert_normals()
+    mesh_texture = test_dataset.get_texture()
+    pytorch_mesh = test_dataset.pytorch_mesh.cuda()
+    face_attrs = test_dataset.get_faces_as_vertex_matrices()
+
+    feature_size = test_dataset.param_vectors.shape[1]
 
     torch_verts = torch.from_numpy(np.array(mesh_verts)).float().cuda()
     torch_edges = torch.from_numpy(np.array(mesh_edges)).long().cuda()
     torch_normals = torch.from_numpy(np.array(mesh_vert_normals)).float().cuda()
     torch_texture = torch.from_numpy(np.array(mesh_texture)).float().cuda()
     torch_texture = torch.unsqueeze(torch_texture.permute(2,0,1),0)
+    torch_face_attrs = torch.from_numpy(np.array(face_attrs)).float().cuda()
 
-    train_dataloader = DataLoader(train_dataset,batch_size=cfg.training.batch_size,shuffle=True,num_workers=4)
-    validation_dataloader = DataLoader(validation_dataset,batch_size=cfg.training.batch_size,shuffle=True,num_workers=4)
+    subset_indices = [82] #random.sample(list(range(len(test_dataset))),1)
+    test_dataloader = Subset(test_dataset,subset_indices)
+    print(subset_indices,len(test_dataloader))
 
-    graph_renderer = GraphRenderer(input_dim=6+train_dataset.param_vectors.shape[1]+cfg.training.texture_feature_dim,
-                                   image_size=tuple(cfg.data.image_size)).cuda()
-    texture_encoder = ImageEncoder(output_dim=cfg.training.texture_feature_dim).cuda()
+    image_translator = ImageTranslator(input_dim=6,output_dim=3,
+                                       image_size=tuple(cfg.data.image_size)).cuda()
+
 
     mse_loss = torch.nn.MSELoss()
 
     # Initialize the optimizer.
     optimizer = torch.optim.Adam(
-        list(graph_renderer.parameters()) + list(texture_encoder.parameters()),
+        image_translator.parameters(),
         lr=cfg.optimizer.lr,
     )
 
@@ -99,30 +113,45 @@ def main(cfg: DictConfig):
     else:
         viz = None
 
-    graph_renderer.eval()
-    texture_encoder.eval()
+    loaded_data = torch.load(checkpoint_path)
+
+    image_translator.load_state_dict(loaded_data["model"], strict=False)
+    image_translator.eval()
     stats.new_epoch()
 
-
     image_list = []
-    for iteration,data in enumerate(train_dataloader):
-        if iteration==10:
-            break
+    for iteration,data in enumerate(test_dataloader):
+        print(iteration)
         optimizer.zero_grad()
-        texture_feature = texture_encoder(torch_texture)
 
         views,param_vectors = data
+        views = torch.unsqueeze(torch.from_numpy(views),0)
+        param_vectors = torch.unsqueeze(torch.from_numpy(param_vectors),0)
         views = views.float().cuda()
         param_vectors = param_vectors.float().cuda()
-        param_vectors = torch.repeat_interleave(param_vectors,torch_verts.size()[0],0)
-        texture_feature_repeat = torch.repeat_interleave(texture_feature,torch_verts.size()[0],0)
-        torch_featured_verts = torch.cat([torch_verts,torch_normals,texture_feature_repeat,param_vectors],1)
-        predicted_render = graph_renderer(torch_featured_verts,torch_edges)
+        camera_instance = Camera()
+        camera_instance.lookAt(param_vectors[0][0], math.degrees(param_vectors[0][1]),
+                               math.degrees(param_vectors[0][2]))
 
-        viz_display_image = torch.cat([predicted_render,views.permute(0,3,1,2)],0)
-        image_list.append(viz_display_image)
+        rasterizer_instance = Rasterizer()
+        rasterizer_instance.init_rasterizer(camera_instance.camera)
+        fragments = rasterizer_instance.rasterizer(pytorch_mesh)
+        pix_to_face = fragments.pix_to_face
+        bary_coords = fragments.bary_coords
+
+        pix_features = torch.squeeze(interpolate_face_attributes(pix_to_face, bary_coords, torch_face_attrs), 3)
+        param_matrix = torch.zeros(pix_features.size()[0], pix_features.size()[1], pix_features.size()[2],
+                                   param_vectors.size()[1]).float().cuda()
+        param_matrix[:, :, :, :] = param_vectors
+        image_features = pix_features  # torch.cat([pix_features,param_matrix],3)
+        predicted_render = image_translator(image_features, torch_texture)
+
+        image_list = [views[0].permute(2,0,1),predicted_render[0].permute(2,0,1)]
 
     if viz is not None:
         visualize_image_outputs(
             validation_images = image_list,viz=viz,visdom_env=cfg.visualization.visdom_env
         )
+
+if __name__ == "__main__":
+    main()

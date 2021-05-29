@@ -12,7 +12,12 @@ from utils.stats import Stats
 import collections
 import pickle
 from utils.visualize_outputs import visualize_image_outputs
-from util_networks.image_encoder import ImageEncoder
+from util_networks.image_translator import ImageTranslator
+from renderer.cameras import Camera
+from renderer.rasterizer import Rasterizer
+from pytorch3d.ops import interpolate_face_attributes
+import math
+
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
@@ -33,11 +38,15 @@ def main(cfg: DictConfig):
                                                                                          validation_fraction=0.2)
 
     del dataset
+    train_dataset.unit_normalize()
+    validation_dataset.unit_normalize()
 
     mesh_verts = train_dataset.get_verts()
     mesh_edges = train_dataset.get_edges()
     mesh_vert_normals = train_dataset.get_vert_normals()
     mesh_texture = train_dataset.get_texture()
+    pytorch_mesh = train_dataset.pytorch_mesh.cuda()
+    face_attrs = train_dataset.get_faces_as_vertex_matrices()
 
     feature_size = train_dataset.param_vectors.shape[1]
 
@@ -45,20 +54,21 @@ def main(cfg: DictConfig):
     torch_edges = torch.from_numpy(np.array(mesh_edges)).long().cuda()
     torch_normals = torch.from_numpy(np.array(mesh_vert_normals)).float().cuda()
     torch_texture = torch.from_numpy(np.array(mesh_texture)).float().cuda()
-    torch_texture = torch.unsqueeze(torch_texture.permute(2,0,1),0)
+    torch_texture = torch.unsqueeze(torch_texture,0)
+    #torch_texture = torch.unsqueeze(torch_texture.permute(2,0,1),0)
+    torch_face_attrs = torch.from_numpy(np.array(face_attrs)).float().cuda()
 
     train_dataloader = DataLoader(train_dataset,batch_size=cfg.training.batch_size,shuffle=True,num_workers=4)
     validation_dataloader = DataLoader(validation_dataset,batch_size=cfg.training.batch_size,shuffle=True,num_workers=4)
 
-    graph_renderer = GraphRenderer(input_dim=6+train_dataset.param_vectors.shape[1]+cfg.training.texture_feature_dim,
+    image_translator = ImageTranslator(input_dim=6+train_dataset.param_vectors.shape[1],output_dim=3,
                                    image_size=tuple(cfg.data.image_size)).cuda()
-    texture_encoder = ImageEncoder(output_dim=cfg.training.texture_feature_dim).cuda()
 
     mse_loss = torch.nn.MSELoss()
 
     # Initialize the optimizer.
     optimizer = torch.optim.Adam(
-        list(graph_renderer.parameters()) + list(texture_encoder.parameters()),
+        image_translator.parameters(),
         lr=cfg.optimizer.lr,
     )
 
@@ -100,21 +110,31 @@ def main(cfg: DictConfig):
         viz = None
 
     for epoch in range(cfg.optimizer.max_epochs):
-        graph_renderer.train()
+        image_translator.train()
         stats.new_epoch()
         for iteration,data in enumerate(train_dataloader):
             optimizer.zero_grad()
-            texture_feature = texture_encoder(torch_texture)
 
             views,param_vectors = data
             views = views.float().cuda()
             param_vectors = param_vectors.float().cuda()
-            param_vectors = torch.repeat_interleave(param_vectors,torch_verts.size()[0],0)
-            texture_feature_repeat = torch.repeat_interleave(texture_feature,torch_verts.size()[0],0)
-            torch_featured_verts = torch.cat([torch_verts,torch_normals,texture_feature_repeat,param_vectors],1)
-            predicted_render = graph_renderer(torch_featured_verts,torch_edges)
+            camera_instance = Camera()
+            camera_instance.lookAt(param_vectors[0][0],math.degrees(param_vectors[0][1]),math.degrees(param_vectors[0][2]))
 
-            loss = mse_loss(predicted_render,views.permute(0,3,1,2))
+            rasterizer_instance = Rasterizer()
+            rasterizer_instance.init_rasterizer(camera_instance.camera)
+            fragments = rasterizer_instance.rasterizer(pytorch_mesh)
+            pix_to_face = fragments.pix_to_face
+            bary_coords = fragments.bary_coords
+
+
+            pix_features = torch.squeeze(interpolate_face_attributes(pix_to_face,bary_coords,torch_face_attrs),3)
+            param_matrix = torch.zeros(pix_features.size()[0],pix_features.size()[1],pix_features.size()[2],param_vectors.size()[1]).float().cuda()
+            param_matrix[:,:,:,:] = param_vectors
+            image_features =  torch.cat([pix_features,param_matrix],3)
+            predicted_render = image_translator(image_features,torch_texture)
+
+            loss = mse_loss(predicted_render,views)
             loss.backward()
             optimizer.step()
 
@@ -131,24 +151,34 @@ def main(cfg: DictConfig):
         #lr_scheduler.step()
 
         # Validation
-        if epoch % cfg.validation_epoch_interval == 0 and epoch > 0:
-
-            texture_feature = texture_encoder(torch_texture)
-            texture_feature_repeat = torch.repeat_interleave(texture_feature,torch_verts.size()[0],0)
+        if epoch % cfg.validation_epoch_interval == 0: # and epoch > 0:
 
             # Sample a validation camera/image.
             val_batch = next(validation_dataloader.__iter__())
             views, param_vectors= val_batch
             views = views.float().cuda()
             param_vectors = param_vectors.float().cuda()
-            param_vectors = torch.repeat_interleave(param_vectors,torch_verts.size()[0],0)
-            torch_featured_verts = torch.cat([torch_verts,torch_normals,texture_feature_repeat,param_vectors],1)
 
             # Activate eval mode of the model (allows to do a full rendering pass).
-            graph_renderer.eval()
+            image_translator.eval()
             with torch.no_grad():
-                predicted_render = graph_renderer(torch_featured_verts,torch_edges)
-                loss = mse_loss(predicted_render,views.permute(0,3,1,2))
+                camera_instance = Camera()
+                camera_instance.lookAt(param_vectors[0][0], math.degrees(param_vectors[0][1]), math.degrees(param_vectors[0][2]))
+
+                rasterizer_instance = Rasterizer()
+                rasterizer_instance.init_rasterizer(camera_instance.camera)
+                fragments = rasterizer_instance.rasterizer(pytorch_mesh)
+                pix_to_face = fragments.pix_to_face
+                bary_coords = fragments.bary_coords
+
+                pix_features = torch.squeeze(interpolate_face_attributes(pix_to_face, bary_coords, torch_face_attrs), 3)
+                param_matrix = torch.zeros(pix_features.size()[0], pix_features.size()[1], pix_features.size()[2],
+                                           param_vectors.size()[1]).float().cuda()
+                param_matrix[:, :, :, :] = param_vectors
+                image_features = torch.cat([pix_features, param_matrix], 3)
+                #pix_features = pix_features.permute(0, 3, 1, 2)
+                predicted_render = image_translator(image_features,torch_texture)
+                loss = mse_loss(predicted_render,views)
 
 
             # Update stats with the validation metrics.
@@ -163,12 +193,13 @@ def main(cfg: DictConfig):
                     plot_file=None,
                 )
                 # Visualize the intermediate results.
+                render_max = torch.max(predicted_render)
                 visualize_image_outputs(
-                    validation_images = [views[0].permute(2,0,1),predicted_render[0]],viz=viz,visdom_env=cfg.visualization.visdom_env
+                    validation_images = [views[0].permute(2,0,1),predicted_render[0].permute(2,0,1)],viz=viz,visdom_env=cfg.visualization.visdom_env
                 )
 
             # Set the model back to train mode.
-            graph_renderer.train()
+            image_translator.train()
 
         # Checkpoint.
         if (
@@ -178,7 +209,7 @@ def main(cfg: DictConfig):
         ):
             print(f"Storing checkpoint {checkpoint_path}.")
             data_to_store = {
-                "model": graph_renderer.state_dict(),
+                "model": image_translator.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "stats": pickle.dumps(stats),
             }

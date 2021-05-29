@@ -6,4 +6,4 @@ class Rasterizer:
         raster_settings = RasterizationSettings(image_size=image_size, blur_radius=blur_radius,
                                                 faces_per_pixel=faces_per_pixel)
 
-        self.rasterizer = MeshRasterizer(cameras=cameras,raster_settings=raster_settings)
+        self.rasterizer = MeshRasterizer(cameras=cameras,raster_settings=raster_settings).cpu()

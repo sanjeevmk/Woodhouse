@@ -8,7 +8,7 @@ import math
 from pytorch3d.structures import Meshes
 from pytorch3d.io import load_objs_as_meshes
 from typing import List
-
+from input_representation.mesh import TriangleMesh
 
 class CowMultiViews(Dataset):
     EXT = '.png'
@@ -45,11 +45,42 @@ class CowMultiViews(Dataset):
     def get_edges(self):
         return np.array(self.trimesh_object.edges)
 
+    def get_faces(self):
+        return np.array(self.trimesh_object.faces)
+
+    def unit_normalize(self):
+        triangle_mesh = TriangleMesh(self.mesh_path)
+        triangle_mesh.load_trimesh_from_file()
+        triangle_mesh.load_pytorch_mesh_from_file()
+        triangle_mesh = triangle_mesh.unit_normalize()
+        self.trimesh_object = triangle_mesh.mesh
+        self.pytorch_mesh = triangle_mesh.pytorch_mesh
+
+    def get_faces_as_vertex_matrices(self):
+        faces = self.get_faces()
+        verts = self.get_verts()
+        normals = self.get_vert_normals()
+
+        faces_attr = []
+        for i in range(faces.shape[0]):
+            face_attr = []
+            for j in range(3):
+                vert_index = faces[i][j]
+                coord_feature = [verts[vert_index][c] for c in range(3)]
+                normal_feature = [normals[vert_index][c] for c in range(3)]
+                vertex_feature = coord_feature + normal_feature
+                face_attr.append(vertex_feature)
+            faces_attr.append(face_attr)
+
+        return np.array(faces_attr)
+
     def get_vert_normals(self):
         return np.array(self.trimesh_object.vertex_normals)
 
-    def get_texture(self):
-        np_texture = np.asarray(Image.open(self.texture_path))
+    def get_texture(self,image_size=[512,512]):
+        pil_texture = Image.open(self.texture_path)
+        pil_texture = pil_texture.resize((image_size[0],image_size[1]))
+        np_texture = np.asarray(pil_texture)
         return np_texture
 
     def load_views_and_params(self):
@@ -62,8 +93,8 @@ class CowMultiViews(Dataset):
 
             view_param_vector = []
             dist = self.params[image_index]['camera']['dist']
-            elev = self.params[image_index]['camera']['elev']/(2*math.pi)
-            azim = self.params[image_index]['camera']['azim']/(2*math.pi)
+            elev = self.params[image_index]['camera']['elev']
+            azim = self.params[image_index]['camera']['azim']
 
             view_param_vector.append(dist)
             view_param_vector.append(elev)
@@ -74,7 +105,8 @@ class CowMultiViews(Dataset):
             light_specular = self.params[image_index]['light']['specular']
             light_direction = self.params[image_index]['light']['direction']
 
-            view_param_vector.extend(light_ambient+ light_diffuse + light_specular + light_direction)
+            #view_param_vector.extend(light_ambient+ light_diffuse + light_specular + light_direction)
+            view_param_vector.extend(light_direction)
 
             param_vectors.append(view_param_vector)
             views.append(np_view)

@@ -7,7 +7,7 @@ checkpoint_path: 'checkpoints/cow_pt3d.pth'
 data:
   dataset_name: 'cow'
   image_size: [128, 128] # [height, width]
-  views_folder : '/home/samk/PhD/Datasets/Cow_Views_Random'
+  views_folder : '/home/samk/PhD/Datasets/Cow_Views_Random_Mini'
   obj_path: '/home/samk/Code/neural_graphics/basic_tests/data/cow_mesh/cow.obj'
   texture_path: '/home/samk/Code/neural_graphics/basic_tests/data/cow_mesh/cow_texture.png'
 training:
