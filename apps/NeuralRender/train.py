@@ -4,8 +4,8 @@ import hydra
 from omegaconf import DictConfig
 import sys
 import os
-#cwd = os.getcwd()
-#sys.path.append(cwd+"/../woodhouse_lib/")
+cwd = os.getcwd()
+sys.path.append(cwd+"/../woodhouse_lib/")
 from datasets.single_mesh_multi_views import CowMultiViews
 from torch.utils.data import DataLoader
 from visdom import Visdom
