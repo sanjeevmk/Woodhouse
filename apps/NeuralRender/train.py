@@ -2,7 +2,10 @@ import torch
 import numpy as np
 import hydra
 from omegaconf import DictConfig
+import sys
 import os
+cwd = os.getcwd()
+sys.path.append(cwd+"/../woodhouse_lib/")
 from datasets.single_mesh_multi_views import CowMultiViews
 from torch.utils.data import DataLoader
 from renderer.shaders.graph_conv_shaders import MeshRenderer as GraphRenderer
@@ -17,7 +20,6 @@ from renderer.cameras import Camera
 from renderer.rasterizer import Rasterizer
 from pytorch3d.ops import interpolate_face_attributes
 import math
-
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
