@@ -56,7 +56,7 @@ class CowMultiViews(Dataset):
         self.trimesh_object = triangle_mesh.mesh
         self.pytorch_mesh = triangle_mesh.pytorch_mesh
 
-    def get_faces_as_vertex_matrices(self):
+    def get_faces_as_vertex_matrices(self,features_list=[],num_random_dims=-1):
         faces = self.get_faces()
         verts = self.get_verts()
         normals = self.get_vert_normals()
@@ -66,9 +66,16 @@ class CowMultiViews(Dataset):
             face_attr = []
             for j in range(3):
                 vert_index = faces[i][j]
-                coord_feature = [verts[vert_index][c] for c in range(3)]
-                normal_feature = [normals[vert_index][c] for c in range(3)]
-                vertex_feature = coord_feature + normal_feature
+                coord_feature = []
+                normal_feature = []
+                random_feature = []
+                if 'coord' in features_list:
+                    coord_feature = [verts[vert_index][c] for c in range(3)]
+                if 'normal' in features_list:
+                    normal_feature = [normals[vert_index][c] for c in range(3)]
+                if 'random' in features_list:
+                    random_feature = np.random.normal(size=num_random_dims).tolist()
+                vertex_feature = coord_feature + normal_feature + random_feature
                 face_attr.append(vertex_feature)
             faces_attr.append(face_attr)
 

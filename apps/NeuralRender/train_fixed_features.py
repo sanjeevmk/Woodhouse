@@ -4,10 +4,12 @@ import hydra
 from omegaconf import DictConfig
 import sys
 import os
-#cwd = os.getcwd()
-#sys.path.append(cwd+"/../woodhouse_lib/")
+cwd = os.getcwd()
+sys.path.append(cwd+"/../woodhouse_lib/")
 from datasets.single_mesh_multi_views import CowMultiViews
 from torch.utils.data import DataLoader
+from renderer.shaders.graph_conv_shaders import MeshRenderer as GraphRenderer
+from pytorch3d.structures import Meshes
 from visdom import Visdom
 from utils.stats import Stats
 import collections
@@ -46,27 +48,29 @@ def main(cfg: DictConfig):
     mesh_vert_normals = train_dataset.get_vert_normals()
     mesh_texture = train_dataset.get_texture()
     pytorch_mesh = train_dataset.pytorch_mesh.cuda()
-    face_attrs = train_dataset.get_faces_as_vertex_matrices(features_list=['random'],num_random_dims=cfg.training.feature_dim)
+    face_attrs = train_dataset.get_faces_as_vertex_matrices()
+
+    feature_size = train_dataset.param_vectors.shape[1]
 
     torch_verts = torch.from_numpy(np.array(mesh_verts)).float().cuda()
     torch_edges = torch.from_numpy(np.array(mesh_edges)).long().cuda()
     torch_normals = torch.from_numpy(np.array(mesh_vert_normals)).float().cuda()
     torch_texture = torch.from_numpy(np.array(mesh_texture)).float().cuda()
     torch_texture = torch.unsqueeze(torch_texture,0)
-    torch_face_attrs = torch.tensor(np.array(face_attrs),requires_grad=True).float().cuda()
-    torch_face_attrs = torch.nn.Parameter(torch_face_attrs)
+    #torch_texture = torch.unsqueeze(torch_texture.permute(2,0,1),0)
+    torch_face_attrs = torch.from_numpy(np.array(face_attrs)).float().cuda()
 
     train_dataloader = DataLoader(train_dataset,batch_size=cfg.training.batch_size,shuffle=True,num_workers=4)
     validation_dataloader = DataLoader(validation_dataset,batch_size=cfg.training.batch_size,shuffle=True,num_workers=4)
 
-    image_translator = ImageTranslator(input_dim=cfg.training.feature_dim,output_dim=3,
+    image_translator = ImageTranslator(input_dim=6+train_dataset.param_vectors.shape[1],output_dim=3,
                                    image_size=tuple(cfg.data.image_size)).cuda()
 
     mse_loss = torch.nn.MSELoss()
 
     # Initialize the optimizer.
     optimizer = torch.optim.Adam(
-        list(image_translator.parameters())+[torch_face_attrs],
+        image_translator.parameters(),
         lr=cfg.optimizer.lr,
     )
 
@@ -125,8 +129,12 @@ def main(cfg: DictConfig):
             pix_to_face = fragments.pix_to_face
             bary_coords = fragments.bary_coords
 
+
             pix_features = torch.squeeze(interpolate_face_attributes(pix_to_face,bary_coords,torch_face_attrs),3)
-            predicted_render = image_translator(pix_features,torch_texture)
+            param_matrix = torch.zeros(pix_features.size()[0],pix_features.size()[1],pix_features.size()[2],param_vectors.size()[1]).float().cuda()
+            param_matrix[:,:,:,:] = param_vectors
+            image_features =  torch.cat([pix_features,param_matrix],3)
+            predicted_render = image_translator(image_features,torch_texture)
 
             loss = mse_loss(predicted_render,views)
             loss.backward()
@@ -166,8 +174,12 @@ def main(cfg: DictConfig):
                 bary_coords = fragments.bary_coords
 
                 pix_features = torch.squeeze(interpolate_face_attributes(pix_to_face, bary_coords, torch_face_attrs), 3)
+                param_matrix = torch.zeros(pix_features.size()[0], pix_features.size()[1], pix_features.size()[2],
+                                           param_vectors.size()[1]).float().cuda()
+                param_matrix[:, :, :, :] = param_vectors
+                image_features = torch.cat([pix_features, param_matrix], 3)
                 #pix_features = pix_features.permute(0, 3, 1, 2)
-                predicted_render = image_translator(pix_features,torch_texture)
+                predicted_render = image_translator(image_features,torch_texture)
                 loss = mse_loss(predicted_render,views)
 
 
@@ -200,7 +212,6 @@ def main(cfg: DictConfig):
             print(f"Storing checkpoint {checkpoint_path}.")
             data_to_store = {
                 "model": image_translator.state_dict(),
-                "features" : torch_face_attrs,
                 "optimizer": optimizer.state_dict(),
                 "stats": pickle.dumps(stats),
             }

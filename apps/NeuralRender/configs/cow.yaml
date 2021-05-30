@@ -12,7 +12,7 @@ data:
   texture_path: '/home/samk/data/cow_mesh/cow_texture.png'
 training:
   batch_size: 1
-  texture_feature_dim: 32
+  feature_dim: 1
 optimizer:
   max_epochs: 20000
   lr: 0.001
