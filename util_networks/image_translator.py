@@ -21,10 +21,10 @@ class ImageTranslator(Module):
         self.linear1tx = nn.Linear(3,16)
         self.linear2tx = nn.Linear(16,32)
         self.linear3tx = nn.Linear(32,32)
-        self.linear1 = nn.Linear(input_dim,256)
-        self.linear2 = nn.Linear(256,512)
-        self.linear3 = nn.Linear(512,512)
-        self.linear4 = nn.Linear(512,output_dim)
+        self.linear1 = nn.Linear(input_dim,512)
+        self.linear2 = nn.Linear(512,512)
+        self.linear3 = nn.Linear(512,1024)
+        self.linear4 = nn.Linear(1024,output_dim)
         self.output_dim = output_dim
 
     def forward(self,image,texture):

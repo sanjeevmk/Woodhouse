@@ -128,7 +128,7 @@ def main(cfg: DictConfig):
             pix_features = torch.squeeze(interpolate_face_attributes(pix_to_face,bary_coords,torch_face_attrs),3)
             predicted_render = image_translator(pix_features,torch_texture)
 
-            loss = mse_loss(predicted_render,views)
+            loss = 1000*mse_loss(predicted_render,views)
             loss.backward()
             optimizer.step()
 
@@ -168,7 +168,7 @@ def main(cfg: DictConfig):
                 pix_features = torch.squeeze(interpolate_face_attributes(pix_to_face, bary_coords, torch_face_attrs), 3)
                 #pix_features = pix_features.permute(0, 3, 1, 2)
                 predicted_render = image_translator(pix_features,torch_texture)
-                loss = mse_loss(predicted_render,views)
+                loss = 1000*mse_loss(predicted_render,views)
 
 
             # Update stats with the validation metrics.
