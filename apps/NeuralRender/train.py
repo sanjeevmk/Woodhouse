@@ -46,7 +46,7 @@ def main(cfg: DictConfig):
     mesh_vert_normals = train_dataset.get_vert_normals()
     mesh_texture = train_dataset.get_texture()
     pytorch_mesh = train_dataset.pytorch_mesh.cuda()
-    face_attrs = train_dataset.get_faces_as_vertex_matrices(features_list=['random'],num_random_dims=cfg.training.feature_dim)
+    face_attrs = train_dataset.get_faces_as_vertex_matrices(features_list=['coord','normal','random'],num_random_dims=cfg.training.feature_dim)
 
     torch_verts = torch.from_numpy(np.array(mesh_verts)).float().cuda()
     torch_edges = torch.from_numpy(np.array(mesh_edges)).long().cuda()
