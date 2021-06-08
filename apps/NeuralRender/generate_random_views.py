@@ -1,4 +1,8 @@
 import argparse
+import sys
+import os
+cwd = os.getcwd()
+sys.path.append(cwd+"/../woodhouse_lib/")
 from input_representation import mesh
 from renderer.cameras import Camera
 from renderer.rasterizer import Rasterizer
@@ -7,7 +11,6 @@ from renderer.shaders.basic_shader import Shader
 from pytorch3d.renderer import MeshRenderer
 from PIL import Image
 import numpy as np
-import os
 import math
 import random
 import json
@@ -84,10 +87,8 @@ def main(args):
         camera_params_dict['elev'] = math.radians(elev[i])
         camera_params_dict['azim'] = math.radians(azim[i])
         camera_location = camera_instance.getLocation()
-        camera_location = camera_location.cpu().detach().numpy()
-        camera_params_dict['x'] = camera_location[0][0]
-        camera_params_dict['y'] = camera_location[0][1]
-        camera_params_dict['z'] = camera_location[0][2]
+        camera_location = camera_location.cpu().detach().numpy().tolist()
+        camera_params_dict['position'] = camera_location[0]
 
         #ambient_color, diffuse_color, specular_color = randomly_sample_colors()
         ambient_color, diffuse_color, specular_color = get_default_colors()
