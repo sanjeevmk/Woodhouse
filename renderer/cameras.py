@@ -10,3 +10,9 @@ class Camera:
 
         if self.camera_type == 'fov':
             self.camera = FoVPerspectiveCameras(device=self.device,R=R,T=T)
+
+    def getLocation(self):
+        location = self.camera.get_camera_center()
+
+        return location
+

@@ -74,6 +74,7 @@ def main(args):
         os.makedirs(args.out_dir)
 
     params_dict = {}
+    light_position = randomly_sample_direction()
     for i in range(args.num_views):
         print(i)
         camera_params_dict = {}
@@ -82,19 +83,23 @@ def main(args):
         camera_params_dict['dist'] = float(bb_diagonal_length)
         camera_params_dict['elev'] = math.radians(elev[i])
         camera_params_dict['azim'] = math.radians(azim[i])
+        camera_location = camera_instance.getLocation()
+        camera_location = camera_location.cpu().detach().numpy()
+        camera_params_dict['x'] = camera_location[0][0]
+        camera_params_dict['y'] = camera_location[0][1]
+        camera_params_dict['z'] = camera_location[0][2]
 
         #ambient_color, diffuse_color, specular_color = randomly_sample_colors()
         ambient_color, diffuse_color, specular_color = get_default_colors()
-        light_direction = randomly_sample_direction()
 
         light_params_dict = {}
-        light_instance = Lights(light_type="directional", ambient_color=ambient_color, diffuse_color=diffuse_color,
+        light_instance = Lights(light_type="point", ambient_color=ambient_color, diffuse_color=diffuse_color,
                                 specular_color=specular_color)
-        light_instance.setup_light(direction=light_direction)
+        light_instance.setup_light(position=light_position)
         light_params_dict['ambient'] = list(ambient_color[0])
         light_params_dict['diffuse'] = list(diffuse_color[0])
         light_params_dict['specular'] = list(specular_color[0])
-        light_params_dict['direction'] = list(light_direction[0])
+        light_params_dict['position'] = list(light_position[0])
         params_dict[i] = {}
         params_dict[i]['camera'] = camera_params_dict
         params_dict[i]['light'] = light_params_dict
