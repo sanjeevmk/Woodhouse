@@ -46,27 +46,31 @@ def main(cfg: DictConfig):
     mesh_vert_normals = train_dataset.get_vert_normals()
     mesh_texture = train_dataset.get_texture()
     pytorch_mesh = train_dataset.pytorch_mesh.cuda()
-    face_attrs = train_dataset.get_faces_as_vertex_matrices(features_list=['random'],num_random_dims=cfg.training.feature_dim)
+    random_face_attrs = train_dataset.get_faces_as_vertex_matrices(features_list=['random'],num_random_dims=cfg.training.feature_dim)
+    coord_face_attrs = train_dataset.get_faces_as_vertex_matrices(features_list=['coord'],num_random_dims=cfg.training.feature_dim)
+    normal_face_attrs = train_dataset.get_faces_as_vertex_matrices(features_list=['normal'],num_random_dims=cfg.training.feature_dim)
 
     torch_verts = torch.from_numpy(np.array(mesh_verts)).float().cuda()
     torch_edges = torch.from_numpy(np.array(mesh_edges)).long().cuda()
     torch_normals = torch.from_numpy(np.array(mesh_vert_normals)).float().cuda()
     torch_texture = torch.from_numpy(np.array(mesh_texture)).float().cuda()
     torch_texture = torch.unsqueeze(torch_texture,0)
-    torch_face_attrs = torch.tensor(np.array(face_attrs),requires_grad=True).float().cuda()
-    torch_face_attrs = torch.nn.Parameter(torch_face_attrs)
+    torch_random_face_attrs = torch.tensor(np.array(random_face_attrs),requires_grad=True).float().cuda()
+    torch_random_face_attrs = torch.nn.Parameter(torch_random_face_attrs)
+    torch_coord_face_attrs = torch.tensor(np.array(coord_face_attrs)).float().cuda()
+    torch_normal_face_attrs = torch.tensor(np.array(normal_face_attrs)).float().cuda()
 
     train_dataloader = DataLoader(train_dataset,batch_size=cfg.training.batch_size,shuffle=True,num_workers=4)
     validation_dataloader = DataLoader(validation_dataset,batch_size=cfg.training.batch_size,shuffle=True,num_workers=4)
 
-    image_translator = ImageTranslator(input_dim=cfg.training.feature_dim,output_dim=3,
+    image_translator = ImageTranslator(input_dim=cfg.training.feature_dim+9,output_dim=3,
                                    image_size=tuple(cfg.data.image_size)).cuda()
 
     mse_loss = torch.nn.MSELoss()
 
     # Initialize the optimizer.
     optimizer = torch.optim.Adam(
-        list(image_translator.parameters())+[torch_face_attrs],
+        list(image_translator.parameters())+[torch_random_face_attrs],
         lr=cfg.optimizer.lr,
     )
 
@@ -118,6 +122,11 @@ def main(cfg: DictConfig):
             param_vectors = param_vectors.float().cuda()
             camera_instance = Camera()
             camera_instance.lookAt(param_vectors[0][0],math.degrees(param_vectors[0][1]),math.degrees(param_vectors[0][2]))
+            camera_location = param_vectors[0,3:6]
+            light_location = param_vectors[0,6:9]
+            torch_camera_face_attrs = torch_coord_face_attrs - camera_location
+            torch_light_face_attrs = torch_coord_face_attrs - light_location
+            torch_face_attrs = torch.cat([torch_camera_face_attrs,torch_normal_face_attrs,torch_light_face_attrs,torch_random_face_attrs],2)
 
             rasterizer_instance = Rasterizer()
             rasterizer_instance.init_rasterizer(camera_instance.camera)
@@ -158,6 +167,11 @@ def main(cfg: DictConfig):
             with torch.no_grad():
                 camera_instance = Camera()
                 camera_instance.lookAt(param_vectors[0][0], math.degrees(param_vectors[0][1]), math.degrees(param_vectors[0][2]))
+                camera_location = param_vectors[0,3:6]
+                light_location = param_vectors[0,6:9]
+                torch_camera_face_attrs = torch_coord_face_attrs - camera_location
+                torch_light_face_attrs = torch_coord_face_attrs - light_location
+                torch_face_attrs = torch.cat([torch_camera_face_attrs,torch_normal_face_attrs,torch_light_face_attrs,torch_random_face_attrs],2)
 
                 rasterizer_instance = Rasterizer()
                 rasterizer_instance.init_rasterizer(camera_instance.camera)

@@ -102,18 +102,20 @@ class CowMultiViews(Dataset):
             dist = self.params[image_index]['camera']['dist']
             elev = self.params[image_index]['camera']['elev']
             azim = self.params[image_index]['camera']['azim']
+            camera_location = self.params[image_index]['camera']['position']
 
             view_param_vector.append(dist)
             view_param_vector.append(elev)
             view_param_vector.append(azim)
+            view_param_vector.extend(camera_location)
 
             light_ambient = self.params[image_index]['light']['ambient']
             light_diffuse = self.params[image_index]['light']['diffuse']
             light_specular = self.params[image_index]['light']['specular']
-            light_direction = self.params[image_index]['light']['direction']
+            light_location = self.params[image_index]['light']['position']
 
             #view_param_vector.extend(light_ambient+ light_diffuse + light_specular + light_direction)
-            view_param_vector.extend(light_direction)
+            view_param_vector.extend(light_location)
 
             param_vectors.append(view_param_vector)
             views.append(np_view)
